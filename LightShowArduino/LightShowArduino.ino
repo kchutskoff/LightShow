@@ -30,11 +30,13 @@ More info at http://wp.josh.com/2014/05/11/ws2812-neopixels-made-easy/
 // These are the timing constraints taken mostly from the WS2812 datasheets 
 // These are chosen to be conservative and avoid problems rather than for maximum throughput 
 
-#define T1H  700    // Width of a 1 bit in ns
+#define T1H  800    // Width of a 1 bit in ns
+// 800
 #define T1L  600    // Width of a 1 bit in ns
 // 600
-#define T0H  200    // Width of a 0 bit in ns
-#define T0L  900    // Width of a 0 bit in ns
+#define T0H  400    // Width of a 0 bit in ns
+// 200
+#define T0L  800    // Width of a 0 bit in ns
 // 900
 #define RES 80000    // Width of the low gap between bits to cause a frame to latch
 
@@ -171,19 +173,15 @@ void onAck() {
 
 void onFrameResponse() {
 	int light = 0;
-	uint8_t byte1 = msg.getNextByte();
-	uint8_t byte2 = msg.getNextByte();
 	cli();
 	for (int i = 0; i < PIXELS; ++i) {
-		
-		uint8_t byte1 = msg.getNextByte();
-		uint8_t byte2 = msg.getNextByte();
-		sendByte((byte1 & 0xF8));
-		sendByte((byte1 << 5) | ((byte2 & 0xE0) >> 3));
-		sendByte((byte2 << 3));
+		sendByte(msg.getNextByte());
+		sendByte(msg.getNextByte());
+		sendByte(msg.getNextByte());
 	}
 	sei();
-	show();
+	// don't need this as we are likely going to take longer to get the next frame anyways
+	//show();
 	msg.beginSend(Commands::FRM);
 	msg.sendByte((uint8_t)PIXELS);
 	msg.endSend();

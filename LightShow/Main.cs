@@ -15,10 +15,17 @@ namespace LightShow
         private Communication.MessageHandler com;
         private object connectionLock = new object();
 
-        List<Tuple<byte, byte, byte>> colors = new List<Tuple<byte, byte, byte>>();
-        int colorIndex = 0;
-        Task<bool> waitForAck;
-        bool gotAck = false;
+        int hueStart = 0;
+        int marqueeStart = 0; // offset of the marquee
+        int marqueeSize = 8; // mods the offset value to get the marquee index
+        int marqueeSkip = 6; // marquee indexes larger than this are turned off
+
+        byte[] nextFrame = null;
+
+        private bool MarqueePixelIsColored(int i)
+        {
+            return ((i + marqueeStart) % marqueeSize) < marqueeSkip;
+        }
 
 
         private enum Commands
@@ -34,32 +41,7 @@ namespace LightShow
             InitializeComponent();
             notifyIcon.Visible = false;
             buttonRefreshAvailPorts_Click(null, null);
-            for(uint h = 0; h < 3*256; h+=1)
-            {
-                byte phase = (byte)(h >> 8);
-                byte step = (byte)(h & 0xFF);
-                byte rr;
-                byte gg;
-                byte bb;
 
-                if (phase == 0)
-                {
-                    rr = (byte)~step;
-                    gg = step;
-                    bb = 0;
-                }else if(phase == 1)
-                {
-                    rr = 0;
-                    gg = (byte)~step;
-                    bb = step;
-                }else
-                {
-                    rr = step;
-                    gg = 0;
-                    bb = (byte)~step;
-                }
-                colors.Add(new Tuple<byte, byte, byte>((byte)rr, (byte)gg, (byte)bb));
-            }
         }
 
         private void Main_Resize(object sender, EventArgs e)
@@ -190,45 +172,97 @@ namespace LightShow
             }
         }
 
+        private static Color ColorFromHSV(double hue, double saturation, double value)
+        {
+            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+            double f = hue / 60 - Math.Floor(hue / 60);
+
+            value = value * 255;
+            int v = Convert.ToInt32(value);
+            int p = Convert.ToInt32(value * (1 - saturation));
+            int q = Convert.ToInt32(value * (1 - f * saturation));
+            int t = Convert.ToInt32(value * (1 - (1 - f) * saturation));
+
+            if (hi == 0)
+                return Color.FromArgb(255, v, t, p);
+            else if (hi == 1)
+                return Color.FromArgb(255, q, v, p);
+            else if (hi == 2)
+                return Color.FromArgb(255, p, v, t);
+            else if (hi == 3)
+                return Color.FromArgb(255, p, q, v);
+            else if (hi == 4)
+                return Color.FromArgb(255, t, p, v);
+            else
+                return Color.FromArgb(255, v, p, q);
+        }
+
+        private byte[] BuildNextFrame(int count)
+        {
+            byte[] data = new byte[3 * count];
+
+            marqueeStart--;
+            if (marqueeStart < 0)
+            {
+                marqueeStart = marqueeSize;
+            }
+
+            hueStart++;
+            if (hueStart > 360)
+            {
+                hueStart = 0;
+            }
+
+            int deltaHue = 360;
+            int curHue = hueStart;
+
+            int errorHue = 2 * deltaHue - count;
+            for (int i = 0; i < count; ++i)
+            {
+                Color ledCol = ColorFromHSV(curHue, 1, 0.6);
+
+                if (MarqueePixelIsColored(i))
+                {
+                    data[i * 3] = ledCol.G;
+                    data[i * 3 + 1] = ledCol.R;
+                    data[i * 3 + 2] = ledCol.B;
+                }
+                else
+                {
+                    data[i * 3] = 0;
+                    data[i * 3 + 1] = 0;
+                    data[i * 3 + 2] = 0;
+                }
+
+                while (errorHue > 0)
+                {
+                    curHue += 1;
+                    errorHue -= count;
+                }
+                errorHue += deltaHue;
+            }
+            return data;
+        }
+
         private void OnRequestFrame(object sender, Communication.MessageHandler.MessageEventArgs EventArgs)
         {
-            this.Invoke((Action)delegate
-            {
-                textBoxMessages.AppendText("CMD FRM\n");
-            });
-            byte r = 0x00, g = 0x00, b = 0x00;
             lock (connectionLock)
             {
                 if (com != null)
                 {
                     byte count = EventArgs.data[0];
-
-                    colorIndex++;
-                    if (colorIndex >= colors.Count())
+                    byte[] data = null;
+                    if (nextFrame == null)
                     {
-                        colorIndex = 0;
-                    }
-
-                    r = colors[colorIndex].Item1;
-                    g = colors[colorIndex].Item2;
-                    b = colors[colorIndex].Item3;
-
-                    // one for each color
-                    byte[] data = new byte[2 * count];
-                    // fill with random values
-                    for(var i = 0; i < count; ++i)
+                        data = BuildNextFrame(count);
+                    }else
                     {
-                        data[i * 2] = (byte)((g & 0xF8) | (r >> 5));
-                        data[i * 2 + 1] = (byte)(((r & 0xFC) << 3) | (b >> 3));
+                        data = nextFrame;
                     }
-
                     com.SendMessage((byte)Commands.FRM_RESP, data);
+                    nextFrame = BuildNextFrame(count);
                 }
             }
-            this.Invoke((Action)delegate
-            {
-                textBoxMessages.AppendText("SND FRM RESP for " + PrintByteArray(new byte[] { r, g, b }) + " \n");
-            });
         }
 
         private void OnAckResponse(object sender, Communication.MessageHandler.MessageEventArgs args)
@@ -237,7 +271,6 @@ namespace LightShow
             {
                 textBoxMessages.AppendText("CMD ACK_RESP\n");
             });
-            this.gotAck = true;
         }
 
         private bool SendAck()
@@ -246,7 +279,6 @@ namespace LightShow
             {
                 if (com != null)
                 {
-                    this.gotAck = false;
                     com.SendMessage((byte)Commands.ACK, null);
                     //return System.Threading.SpinWait.SpinUntil(() => this.gotAck == true, 1000);
                     return true;
