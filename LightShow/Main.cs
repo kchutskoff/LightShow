@@ -7,6 +7,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Diagnostics;
+using Extensions;
 
 namespace LightShow
 {
@@ -18,7 +20,12 @@ namespace LightShow
         int hueStart = 0;
         int marqueeStart = 0; // offset of the marquee
         int marqueeSize = 8; // mods the offset value to get the marquee index
-        int marqueeSkip = 6; // marquee indexes larger than this are turned off
+        int marqueeSkip = 2; // marquee indexes larger than this are turned off
+
+        Stopwatch frameTimer = new Stopwatch();
+        Queue<long> frameTimings = new Queue<long>();
+        const int frameTimingsMax = 1;
+        double framesPerSecond = 0;
 
         byte[] nextFrame = null;
 
@@ -123,9 +130,13 @@ namespace LightShow
         private bool OpenConnection(string portName)
         {
             CloseConnection();
-            com = new Communication.MessageHandler(portName, 115200, 100);
+            com = new Communication.MessageHandler(portName, 500000, 1024);
             com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
             com.OnExceptionMessage += Com_OnExceptionMessage;
+
+            frameTimings.Clear();
+            frameTimer.Restart();
+            framesPerSecond = 0;
 
             return com.Connect();
         }
@@ -146,6 +157,8 @@ namespace LightShow
                 com.Dispose();
                 com = null;
             }
+
+            frameTimer.Reset();
         }
 
         private static Color ColorFromHSV(double hue, double saturation, double value)
@@ -176,7 +189,6 @@ namespace LightShow
         private byte[] BuildNextFrame(int count)
         {
             byte[] data = new byte[3 * count];
-
             marqueeStart--;
             if (marqueeStart < 0)
             {
@@ -184,12 +196,12 @@ namespace LightShow
             }
 
             hueStart++;
-            if (hueStart > 360)
+            int deltaHue = 360;
+            if (hueStart > deltaHue)
             {
                 hueStart = 0;
             }
 
-            int deltaHue = 360;
             int curHue = hueStart;
 
             int errorHue = 2 * deltaHue - count;
@@ -239,6 +251,23 @@ namespace LightShow
                             data = nextFrame;
                         }
                         com.SendMessage((byte)Commands.FRM_RESP, data);
+
+                        long now = frameTimer.ElapsedTicks;
+                        if (frameTimings.Count > 0)
+                        {
+                            long difference = now - frameTimings.Peek();
+                            long ticksPerFrame = difference / frameTimings.Count;
+                            double secondsPerFrame = ((double)ticksPerFrame / Stopwatch.Frequency);
+                            framesPerSecond = 1 / secondsPerFrame;
+                        }
+
+                        frameTimings.Enqueue(now);
+                        while (frameTimings.Count > frameTimingsMax)
+                        {
+                            frameTimings.Dequeue();
+                        }
+
+
                         nextFrame = BuildNextFrame(count);
                     }
                 }
@@ -247,7 +276,14 @@ namespace LightShow
                     System.Threading.Monitor.Exit(connectionLock);
                 }
             }
+            this.labelFPS.InvokeIfRequired(UpdateFramesPerSecond);
         }
+
+        private void UpdateFramesPerSecond()
+        {
+            this.labelFPS.Text = this.framesPerSecond.ToString("00.00");
+        }
+
 
         private string PrintByteArray(byte[] data)
         {

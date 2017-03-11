@@ -37,6 +37,8 @@
             this.buttonConnect = new System.Windows.Forms.Button();
             this.labelStatus = new System.Windows.Forms.Label();
             this.textBoxMessages = new System.Windows.Forms.TextBox();
+            this.label2 = new System.Windows.Forms.Label();
+            this.labelFPS = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // notifyIcon
@@ -104,11 +106,31 @@
             this.textBoxMessages.Size = new System.Drawing.Size(259, 177);
             this.textBoxMessages.TabIndex = 6;
             // 
+            // label2
+            // 
+            this.label2.AutoSize = true;
+            this.label2.Location = new System.Drawing.Point(112, 43);
+            this.label2.Name = "label2";
+            this.label2.Size = new System.Drawing.Size(30, 13);
+            this.label2.TabIndex = 7;
+            this.label2.Text = "FPS:";
+            // 
+            // labelFPS
+            // 
+            this.labelFPS.AutoSize = true;
+            this.labelFPS.Location = new System.Drawing.Point(138, 43);
+            this.labelFPS.Name = "labelFPS";
+            this.labelFPS.Size = new System.Drawing.Size(28, 13);
+            this.labelFPS.TabIndex = 8;
+            this.labelFPS.Text = "00.0";
+            // 
             // Main
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(284, 261);
+            this.Controls.Add(this.labelFPS);
+            this.Controls.Add(this.label2);
             this.Controls.Add(this.textBoxMessages);
             this.Controls.Add(this.labelStatus);
             this.Controls.Add(this.buttonConnect);
@@ -135,6 +157,8 @@
         private System.Windows.Forms.Button buttonConnect;
         private System.Windows.Forms.Label labelStatus;
         private System.Windows.Forms.TextBox textBoxMessages;
+        private System.Windows.Forms.Label label2;
+        private System.Windows.Forms.Label labelFPS;
     }
 }
 

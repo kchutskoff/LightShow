@@ -40,7 +40,7 @@ More info at http://wp.josh.com/2014/05/11/ws2812-neopixels-made-easy/
 // 800
 #define T1L  600    // Width of a 1 bit in ns
 // 600
-#define T0H  400    // Width of a 0 bit in ns
+#define T0H  300    // Width of a 0 bit in ns
 // 200
 #define T0L  800    // Width of a 0 bit in ns
 // 900
@@ -155,11 +155,11 @@ inline void sendPixel(uint8_t r, uint8_t g, uint8_t b) {
 
 // each frame should take under 33ms to receive (115200 baud, 10 bits per byte, theoretical max of 36 fps)
 uint64_t lastFrameMillis = 0;
-uint64_t pingDropFrameEvery = 50; // if we don't get a frame after 50ms, send message for a new one
+uint64_t pingDropFrameEvery = 100; // if we don't get a frame after 100ms, send message for a new one
 uint8_t runOwnAfter = 2; // if we don't get a frame after 2 pings, transition to our own logic
 uint8_t droppedFrameCount = 0; // count the number of dropped frames
 uint64_t lastOwnMillis = 0; // last time since our own frame
-uint64_t ownFrameDelay = 32; // number of ms between our own frame
+uint64_t ownFrameDelay = 16; // number of ms between our own frame
 uint8_t ownFrameIndex = 0; // offset of own frame (for animation)
 
 
@@ -184,7 +184,6 @@ void requestFrame() {
 
 void onFrameResponse() {
 	droppedFrameCount = 0;
-	lastFrameMillis = millis();
 	cli();
 	for (int i = 0; i < PIXELS; ++i) {
 		sendByte(msg.getNextByte());
@@ -192,9 +191,9 @@ void onFrameResponse() {
 		sendByte(msg.getNextByte());
 	}
 	sei();
-	// don't need this as we are likely going to take longer to get the next frame anyways
-	//show();
 	requestFrame();
+	
+	lastFrameMillis = millis();
 }
 
 void runOwnFrame() {
@@ -221,9 +220,6 @@ void runOwnFrame() {
 		else if (i == SPECIAL_3_SAME) {
 			special3_hue = curHue;
 		}
-		//LEDS[i * 3 + 0] = rgb.g;
-		//LEDS[i * 3 + 1] = rgb.r;
-		//LEDS[i * 3 + 2] = rgb.b;
 		while (errorHue > 0) {
 			curHue++;
 			errorHue -= PIXELS_LESS_SPECIAL;
@@ -243,17 +239,13 @@ void runOwnFrame() {
 	HsvToRgb(hsv, rgb);
 	sendPixel(rgb.r, rgb.g, rgb.b);
 
-	sei();
-	//for (int i = 0; i < PIXELS * 3; ++i) {
-	//	sendByte(LEDS[i]);
-	//}
-	
+	sei();	
 }
 
 // the setup function runs once when you press reset or power the board
 void setup() {
 	ledsetup();
-	Serial.begin(115200);
+	Serial.begin(500000);
 	msg.addHandler(Commands::FRM_RESP, onFrameResponse);
 }
 
