@@ -135,7 +135,7 @@ bool MessageHandlerClass::send(uint8_t messageType, uint8_t buffer[], int offset
 		this->beginSend(messageType);
 		int end = offset + length;
 		for (int i = offset; i < end; ++i) {
-			this->sendByte(buffer[offset]);
+			this->sendByte(buffer[i]);
 		}
 		return this->endSend();
 	}
