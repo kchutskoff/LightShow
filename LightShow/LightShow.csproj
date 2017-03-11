@@ -46,12 +46,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Communication\AsyncCOMPort.cs" />
-    <Compile Include="Communication\LightShowCOM.cs" />
-    <Compile Include="Communication\LightShowConnection.cs" />
     <Compile Include="Communication\SerialConnection.cs" />
     <Compile Include="Communication\MessageHandler.cs" />
-    <Compile Include="Communication\SyncCOMPort.cs" />
     <Compile Include="Main.cs">
       <SubType>Form</SubType>
     </Compile>
