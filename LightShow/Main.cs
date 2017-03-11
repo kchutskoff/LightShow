@@ -30,10 +30,8 @@ namespace LightShow
 
         private enum Commands
         {
-            ACK = 0,
-            ACK_RESP = 1,
-            FRM = 2,
-            FRM_RESP = 3
+            FRM = 0,
+            FRM_RESP = 1
         }
 
         public Main()
@@ -85,35 +83,38 @@ namespace LightShow
         private void buttonConnect_Click(object sender, EventArgs e)
         {
             buttonConnect.Enabled = false;
-            if (com != null)
+            lock (connectionLock)
             {
-                CloseConnection();
-                labelStatus.Text = "Disconnected";
-                buttonConnect.Text = "Connect";
-                buttonConnect.Enabled = true;
-            }
-            else
-            {
-                string portName = (string)comboBoxPort.SelectedItem ?? "";
-                if (String.IsNullOrEmpty(portName))
+                if (com != null)
                 {
-                    MessageBox.Show("A valid port must be selected!", "Unable to Connect", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    CloseConnection();
+                    labelStatus.Text = "Disconnected";
+                    buttonConnect.Text = "Connect";
                     buttonConnect.Enabled = true;
                 }
                 else
                 {
-                    if (OpenConnection(portName) && SendAck())
+                    string portName = (string)comboBoxPort.SelectedItem ?? "";
+                    if (String.IsNullOrEmpty(portName))
                     {
-                        labelStatus.Text = "Connected";
-                        buttonConnect.Text = "Disconnect";
+                        MessageBox.Show("A valid port must be selected!", "Unable to Connect", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         buttonConnect.Enabled = true;
                     }
                     else
                     {
-                        CloseConnection();
-                        labelStatus.Text = "Unable to connect";
-                        buttonConnect.Text = "Connect";
-                        buttonConnect.Enabled = true;
+                        if (OpenConnection(portName))
+                        {
+                            labelStatus.Text = "Connected";
+                            buttonConnect.Text = "Disconnect";
+                            buttonConnect.Enabled = true;
+                        }
+                        else
+                        {
+                            CloseConnection();
+                            labelStatus.Text = "Unable to connect";
+                            buttonConnect.Text = "Connect";
+                            buttonConnect.Enabled = true;
+                        }
                     }
                 }
             }
@@ -121,34 +122,12 @@ namespace LightShow
 
         private bool OpenConnection(string portName)
         {
-            lock (connectionLock)
-            {
-                //CloseConnection();
-                //port = new SerialTransport();
-                //port.CurrentSerialSettings.PortName = portName;
-                //port.CurrentSerialSettings.Timeout = 1000;
-                //port.CurrentSerialSettings.BaudRate = 115200;
+            CloseConnection();
+            com = new Communication.MessageHandler(portName, 115200, 100);
+            com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
+            com.OnExceptionMessage += Com_OnExceptionMessage;
 
-                //messenger = new CmdMessenger(port, BoardType.Bit16);
-                //messenger.Attach(OnUnknownCommand);
-                //messenger.Attach((int)Commands.ACK_RESP, OnAckResponse);
-                //messenger.Attach((int)Commands.FRM, OnRequestFrame);
-
-                //bool status = messenger.Connect();
-                //if (!status)
-                //{
-                //    CloseConnection();
-                //    return false;
-                //}
-
-                CloseConnection();
-                com = new Communication.MessageHandler(portName, 115200, 100);
-                com.AddMessageHandler((byte)Commands.ACK_RESP, OnAckResponse);
-                com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
-                com.OnExceptionMessage += Com_OnExceptionMessage;
-
-                return com.Connect();
-            }
+            return com.Connect();
         }
 
         private void Com_OnExceptionMessage(object sender, Communication.MessageHandler.MessageExceptionEventArgs EventArgs)
@@ -161,14 +140,11 @@ namespace LightShow
 
         private void CloseConnection()
         {
-            lock (connectionLock)
+            if (com != null)
             {
-                if (com != null)
-                {
-                    com.Disconnect();
-                    com.Dispose();
-                    com = null;
-                }
+                com.Disconnect();
+                com.Dispose();
+                com = null;
             }
         }
 
@@ -246,44 +222,30 @@ namespace LightShow
 
         private void OnRequestFrame(object sender, Communication.MessageHandler.MessageEventArgs EventArgs)
         {
-            lock (connectionLock)
+            if(System.Threading.Monitor.TryEnter(connectionLock))
             {
-                if (com != null)
+                try
                 {
-                    byte count = EventArgs.data[0];
-                    byte[] data = null;
-                    if (nextFrame == null)
+                    if (com != null)
                     {
-                        data = BuildNextFrame(count);
-                    }else
-                    {
-                        data = nextFrame;
+                        byte count = EventArgs.data[0];
+                        byte[] data = null;
+                        if (nextFrame == null)
+                        {
+                            data = BuildNextFrame(count);
+                        }
+                        else
+                        {
+                            data = nextFrame;
+                        }
+                        com.SendMessage((byte)Commands.FRM_RESP, data);
+                        nextFrame = BuildNextFrame(count);
                     }
-                    com.SendMessage((byte)Commands.FRM_RESP, data);
-                    nextFrame = BuildNextFrame(count);
                 }
-            }
-        }
-
-        private void OnAckResponse(object sender, Communication.MessageHandler.MessageEventArgs args)
-        {
-            this.Invoke((Action)delegate
-            {
-                textBoxMessages.AppendText("CMD ACK_RESP\n");
-            });
-        }
-
-        private bool SendAck()
-        {
-            lock (connectionLock)
-            {
-                if (com != null)
+                finally
                 {
-                    com.SendMessage((byte)Commands.ACK, null);
-                    //return System.Threading.SpinWait.SpinUntil(() => this.gotAck == true, 1000);
-                    return true;
+                    System.Threading.Monitor.Exit(connectionLock);
                 }
-                return false;
             }
         }
 

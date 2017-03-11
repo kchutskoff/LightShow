@@ -8,7 +8,12 @@ More info at http://wp.josh.com/2014/05/11/ws2812-neopixels-made-easy/
 // Change this to be at least as long as your pixel string (too long will work fine, just be a little slower)
 
 #include "MessageHandler.h"
+#include "HSV.h"
 #define PIXELS 106  // Number of pixels in the string
+#define PIXELS_LESS_SPECIAL 103
+#define SPECIAL_1_SAME 100
+#define SPECIAL_2_SAME 76
+#define SPECIAL_3_SAME 88
 
 // These values depend on which pin your string is connected to and what board you are using 
 // More info on how to find these at http://www.arduino.cc/en/Reference/PortManipulation
@@ -147,7 +152,14 @@ inline void sendPixel(uint8_t r, uint8_t g, uint8_t b) {
 
 }
 
-uint8_t LEDS [PIXELS * 3];
+// each frame should take under 33ms to receive (115200 baud, 10 bits per byte, theoretical max of 36 fps)
+uint64_t lastFrameMillis = 0;
+uint64_t pingDropFrameEvery = 50; // if we don't get a frame after 50ms, send message for a new one
+uint8_t runOwnAfter = 2; // if we don't get a frame after 2 pings, transition to our own logic
+uint8_t droppedFrameCount = 0; // count the number of dropped frames
+uint64_t lastOwnMillis = 0; // last time since our own frame
+uint64_t ownFrameDelay = 32; // number of ms between our own frame
+uint8_t ownFrameIndex = 0; // offset of own frame (for animation)
 
 
 // Just wait long enough without sending any bots to cause the pixels to latch and display the last sent frame
@@ -158,21 +170,20 @@ void show() {
 
 MessageHandlerClass msg = MessageHandlerClass(Serial);
 enum Commands : uint8_t {
-	ACK,
-	ACK_RESP,
 	FRM,
 	FRM_RESP
 };
 
-void onAck() {
-	msg.send(Commands::ACK_RESP);
+
+void requestFrame() {
 	msg.beginSend(Commands::FRM);
 	msg.sendByte((uint8_t)PIXELS);
 	msg.endSend();
 }
 
 void onFrameResponse() {
-	int light = 0;
+	droppedFrameCount = 0;
+	lastFrameMillis = millis();
 	cli();
 	for (int i = 0; i < PIXELS; ++i) {
 		sendByte(msg.getNextByte());
@@ -182,44 +193,86 @@ void onFrameResponse() {
 	sei();
 	// don't need this as we are likely going to take longer to get the next frame anyways
 	//show();
-	msg.beginSend(Commands::FRM);
-	msg.sendByte((uint8_t)PIXELS);
-	msg.endSend();
+	requestFrame();
+}
+
+void runOwnFrame() {
+	uint8_t curHue = ++ownFrameIndex;
+	int16_t errorHue = 2 * 255 - PIXELS_LESS_SPECIAL;
+	RgbColor rgb;
+	HsvColor hsv;
+	hsv.s = 255;
+	hsv.v = 50;
+	uint8_t special1_hue;
+	uint8_t special2_hue;
+	uint8_t special3_hue;
+	cli();
+	for (int i = 0; i < PIXELS_LESS_SPECIAL; ++i) {
+		hsv.h = curHue;
+		HsvToRgb(hsv, rgb);
+		sendPixel(rgb.r, rgb.g, rgb.b);
+		if (i == SPECIAL_1_SAME) {
+			special1_hue = curHue;
+		}
+		else if (i == SPECIAL_2_SAME) {
+			special2_hue = curHue;
+		}
+		else if (i == SPECIAL_3_SAME) {
+			special3_hue = curHue;
+		}
+		//LEDS[i * 3 + 0] = rgb.g;
+		//LEDS[i * 3 + 1] = rgb.r;
+		//LEDS[i * 3 + 2] = rgb.b;
+		while (errorHue > 0) {
+			curHue++;
+			errorHue -= PIXELS_LESS_SPECIAL;
+		}
+		errorHue += 255;
+	}
+	hsv.v = 255;
+	hsv.h = special1_hue;
+	HsvToRgb(hsv, rgb);
+	sendPixel(rgb.r, rgb.g, rgb.b);
+
+	hsv.h = special2_hue;
+	HsvToRgb(hsv, rgb);
+	sendPixel(rgb.r, rgb.g, rgb.b);
+
+	hsv.h = special3_hue;
+	HsvToRgb(hsv, rgb);
+	sendPixel(rgb.r, rgb.g, rgb.b);
+
+	sei();
+	//for (int i = 0; i < PIXELS * 3; ++i) {
+	//	sendByte(LEDS[i]);
+	//}
+	
 }
 
 // the setup function runs once when you press reset or power the board
 void setup() {
 	ledsetup();
 	Serial.begin(115200);
-	msg.addHandler(Commands::ACK, onAck);
 	msg.addHandler(Commands::FRM_RESP, onFrameResponse);
-	for (int i = 0; i < PIXELS; ++i) {
-		sendByte(0x00);
-		sendByte(0xFF);
-		sendByte(0x00);
-	}
-	show();
 }
 
 // the loop function runs over and over again until power down or reset
 void loop() {
-	//if (Serial.available()) {
-	//	uint8_t buffer[128];
-	//	int read = Serial.readBytes(buffer, 128);
-	//	for (int i = 0; i < PIXELS; ++i) {
-	//		if (i < read) {
-	//			sendByte(0xFF);
-	//			sendByte(0x00);
-	//			sendByte(0x00);
-	//		}
-	//		else {
-	//			sendByte(0x00);
-	//			sendByte(0xFF);
-	//			sendByte(0x00);
-	//		}
-	//	}
-	//	show();
-	//	delay(1000);
-	//}
 	msg.readSerial();
+	if (millis() - lastFrameMillis >= pingDropFrameEvery) {
+		// missed a frame, so ask for a new one
+		requestFrame();
+		lastFrameMillis = millis();
+		if (droppedFrameCount < runOwnAfter) {
+			// still counting number of frames left
+			droppedFrameCount++;
+			lastOwnMillis = 0;
+		}
+	}
+
+	if (droppedFrameCount >= runOwnAfter && millis() - lastOwnMillis >= ownFrameDelay) {
+		// dropped enough frames and its been enough time since our last frame, run a new frame ourself
+		lastOwnMillis = millis();
+		runOwnFrame();
+	}
 }
