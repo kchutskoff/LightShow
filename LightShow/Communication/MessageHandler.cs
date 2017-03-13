@@ -70,14 +70,21 @@ namespace LightShow.Communication
             
         }
 
-        public bool SendMessage(byte messageType, byte[] data)
+        public bool SendMessage(byte messageType, byte[] data, bool dontEscapeJustReplace = false)
         {
-            data = EscapeStream(data);
+            if (dontEscapeJustReplace)
+            {
+                ReplaceEscapeStream(data);
+            }else
+            {
+                data = EscapeStream(data);
+            }
+            
             byte[] output = new byte[data.Length + 5];
-            output[0] = 0x55;
+            output[0] = 0x81;
             output[1] = 0xFF;
             output[2] = messageType;
-            output[3 + data.Length] = 0x55;
+            output[3 + data.Length] = 0x81;
             output[4 + data.Length] = 0x00;
             Buffer.BlockCopy(data, 0, output, 3, data.Length);
             return this.serial.WriteBytes(output, 0, output.Length);
@@ -107,7 +114,7 @@ namespace LightShow.Communication
             bool foundStart = false;
             while(reader < bufferIndex)
             {
-                if(buffer[reader] == 0x55)
+                if(buffer[reader] == 0x81)
                 {
                     if (reader + 1 < bufferIndex)
                     {
@@ -127,7 +134,7 @@ namespace LightShow.Communication
                             }
                         } else if (buffer[reader + 1] != 0xFE)
                         {
-                            RaiseError(new Exception("Received unescaped 0x55 byte in input stream!"));
+                            RaiseError(new Exception("Received unescaped 0x81 byte in input stream!"));
                             foundStart = false;
                             packetStart = bufferIndex;
                         }
@@ -144,14 +151,14 @@ namespace LightShow.Communication
 
         private void ParsePacket(int start, int end)
         {
-            if(buffer[start] != 0x55 && buffer[start + 1] != 0xFF)
+            if(buffer[start] != 0x81 && buffer[start + 1] != 0xFF)
             {
-                RaiseError(new Exception("Illegal start for packet! Expected 0x55, 0xFF and got " + printByte(buffer[start]) + ", " + printByte(buffer[start + 1]) + "!"));
+                RaiseError(new Exception("Illegal start for packet! Expected 0x81, 0xFF and got " + printByte(buffer[start]) + ", " + printByte(buffer[start + 1]) + "!"));
                 return;
             }
-            if(buffer[end - 2] != 0x55 && buffer[end - 1] != 0x00)
+            if(buffer[end - 2] != 0x81 && buffer[end - 1] != 0x00)
             {
-                RaiseError(new Exception("Illegal end for packet! Expected 0x55, 0x00 and got " + printByte(buffer[start]) + ", " + printByte(buffer[start + 1]) + "!"));
+                RaiseError(new Exception("Illegal end for packet! Expected 0x81, 0x00 and got " + printByte(buffer[start]) + ", " + printByte(buffer[start + 1]) + "!"));
                 return;
             }
             if(end - start < 5)
@@ -178,6 +185,20 @@ namespace LightShow.Communication
             this.OnExceptionMessage?.Invoke(this, new MessageExceptionEventArgs(e));
         }
 
+        public static void ReplaceEscapeStream(byte[] data)
+        {
+            if(data != null)
+            {
+                for (var i = 0; i < data.Length; ++i)
+                {
+                    if (data[i] == 0x81)
+                    {
+                        data[i] = 0x80;
+                    }
+                }
+            }
+        }
+
         public static byte[] EscapeStream(byte[] data)
         {
             if(data == null)
@@ -187,7 +208,7 @@ namespace LightShow.Communication
             List<int> escapeIndexes = new List<int>();
             for(var i= 0; i < data.Length; ++i)
             {
-                if(data[i] == 0x55)
+                if(data[i] == 0x81)
                 {
                     escapeIndexes.Add(i);
                 }
@@ -228,7 +249,7 @@ namespace LightShow.Communication
             List<int> escapedIndexes = new List<int>();
             for (var i = 0; i < data.Length; ++i)
             {
-                if (data[i] == 0x55)
+                if (data[i] == 0x81)
                 {
                     escapedIndexes.Add(i);
                 }
@@ -249,7 +270,7 @@ namespace LightShow.Communication
                 Buffer.BlockCopy(data, lastIndex, output, lastIndex - offset, (nextIndex - lastIndex + 1));
                 if(data[nextIndex + 1] != 0xFE)
                 {
-                    throw new Exception("Incorrect escape character after 0x55! Expected 0xFE and got " + printByte(data[nextIndex + 1]) + "!");
+                    throw new Exception("Incorrect escape character after 0x81! Expected 0xFE and got " + printByte(data[nextIndex + 1]) + "!");
                 }
                 // record for next loop, skip FE
                 lastIndex = nextIndex + 2;

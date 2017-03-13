@@ -10,15 +10,13 @@ void MessageHandlerClass::init()
 
 }
 
-MessageHandlerClass::MessageHandlerClass(HardwareSerial& serial) : 
-	serial(&serial), 
-	msgBufferIndex(0),
-	readBufferIndex(0),
+MessageHandlerClass::MessageHandlerClass(HardwareSerial& serial) :
+	serial(&serial),
+	lastWasHeader(false),
 	lastWasSpecial(false),
 	isSending(false),
-	msgEndIndex(-1),
-	onDebug(NULL),
-	msgStartIndex(-1){
+	isReading(false),
+	onDebug(NULL){
 	for (uint8_t i = 0; i < MESSAGE_HANDLER_COUNT; ++i) {
 		handlers[i] = NULL;
 	}
@@ -26,62 +24,71 @@ MessageHandlerClass::MessageHandlerClass(HardwareSerial& serial) :
 
 void MessageHandlerClass::readSerial() {
 	int available = 0;
-	while ((available = serial->available())) {
-		int read = serial->readBytes(readBuffer, min(available, MESSAGE_HANDLER_READ_BUFFER_SIZE - readBufferIndex));
-		for (int i = 0; i < read; ++i) {
-			if (lastWasSpecial) {
-				if (readBuffer[i] == 0xFE) {
-					// get rid of 0xFE after 0x55
-					lastWasSpecial = false;
-					continue;
-				}
-				else if (readBuffer[i] == 0xFF) {
-					// start of packet
-					msgStartIndex = msgBufferIndex - 1;
-					lastWasSpecial = false;
-				}
-				else if (readBuffer[i] == 0x00) {
-					if (msgStartIndex != -1) {
-						msgEndIndex = msgBufferIndex - 1;
-					}
-					lastWasSpecial = false;
-				}else{
-					lastWasSpecial = false;
-				}
-				
+	while (serial->available() > 0) {
+		uint8_t read = serial->read();
+		if (lastWasHeader) {
+			lastWasHeader = false;
+			// this is the type, send off a message arrival
+			if (read < MESSAGE_HANDLER_COUNT && handlers[read] != NULL) {
+				isReading = true;
+				handlers[read]();
 			}
-			else if (readBuffer[i] == 0x55) {
-				lastWasSpecial = true;
+			else {
+				isReading = false;
 			}
-			msgBuffer[msgBufferIndex++] = readBuffer[i];
-			if (msgEndIndex != -1) {
-				this->handleMessage();
-				// restart buffer and message indexes
-				msgBufferIndex = 0;
-				msgEndIndex = -1;
-				msgStartIndex = -1;
+		}else if (lastWasSpecial) {
+			lastWasSpecial = false;
+			if (read == 0xFF) {
+				// start of packet
+				lastWasHeader = true;
+			}
+			else if (read == 0x00) {
+				isReading = false;
 			}
 		}
-	}
-
-}
-
-void MessageHandlerClass::handleMessage() {
-	// get past header and msg type byte
-	msgStartIndex += 3;
-	uint8_t msgType = msgBuffer[msgStartIndex - 1];
-	if (handlers[msgType] != NULL) {
-		handlers[msgType]();
+		else if (read == 0x81) {
+			lastWasSpecial = true;
+		}
 	}
 }
 
 bool MessageHandlerClass::hasNextByte() {
-	return msgStartIndex < msgEndIndex;
+	return isReading && serial->available() > 0;
 }
 
 uint8_t MessageHandlerClass::getNextByte() {
-	if (msgStartIndex < msgEndIndex) {
-		return msgBuffer[msgStartIndex++];
+	if (isReading) {
+		int attempts = 100;
+		while (--attempts > 0) {
+			if (serial->available() > 0) {
+				attempts = 100;
+				uint8_t read = serial->read();
+				if (lastWasSpecial) {
+					if (read == 0xFE) {
+						// escaped
+						return 0x81;
+					}
+					else if (read == 0x00) {
+						// end of packet
+						isReading = false;
+						return 0x00;
+					}
+					else {
+						// ignore
+						continue;
+					}
+				}
+				if (read == 0x81) {
+					// escape character
+					lastWasSpecial = true;
+					continue;
+				}
+				else {
+					return read;
+				}
+			}
+		}
+		return 0x00;
 	}
 	return 0x00;
 }
@@ -95,7 +102,7 @@ void MessageHandlerClass::addHandler(uint8_t msgType, messageHandler handler) {
 bool MessageHandlerClass::beginSend(uint8_t messageType) {
 	if (!isSending) {
 		isSending = true;
-		serial->write((uint8_t)0x55);
+		serial->write((uint8_t)0x81);
 		serial->write((uint8_t)0xFF);
 		this->sendByte(messageType);
 		return true;
@@ -105,7 +112,7 @@ bool MessageHandlerClass::beginSend(uint8_t messageType) {
 bool MessageHandlerClass::sendByte(uint8_t data) {
 	if (isSending) {
 		serial->write(data);
-		if (data == 0x55) {
+		if (data == 0x81) {
 			serial->write((byte)0xFE);
 		}
 		return true;
@@ -114,7 +121,7 @@ bool MessageHandlerClass::sendByte(uint8_t data) {
 }
 bool MessageHandlerClass::endSend() {
 	if (isSending) {
-		serial->write((uint8_t)0x55);
+		serial->write((uint8_t)0x81);
 		serial->write((uint8_t)0x00);
 		isSending = false;
 		return true;

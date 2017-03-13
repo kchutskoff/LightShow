@@ -22,19 +22,13 @@ extern "C"
 class MessageHandlerClass
 {
  protected:
-	 int readBufferIndex;
-	 int msgBufferIndex;
 	 bool lastWasSpecial;
+	 bool lastWasHeader;
 	 bool isSending;
-	 int msgEndIndex;
-	 int msgStartIndex;
-	 uint8_t msgBuffer[MESSAGE_HANDLER_MESSAGE_BUFFER_SIZE];
-	 uint8_t readBuffer[MESSAGE_HANDLER_READ_BUFFER_SIZE];
+	 bool isReading;
 	 HardwareSerial* serial;
 	 messageHandler handlers[MESSAGE_HANDLER_COUNT];
 	 void debugMessage(char[]);
-
-	 void handleMessage();
 
  public:
 	void init();
