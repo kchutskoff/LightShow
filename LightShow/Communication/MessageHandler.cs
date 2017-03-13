@@ -173,7 +173,13 @@ namespace LightShow.Communication
                 byte[] data = new byte[end - start - 5];
                 Buffer.BlockCopy(buffer, start + 3, data, 0, end - start - 5);
                 data = UnescapeStream(data);
-                handler?.Invoke(this, new MessageEventArgs(data));
+                try
+                {
+                    handler?.Invoke(this, new MessageEventArgs(data));
+                } catch (Exception ex)
+                {
+                    RaiseError(new Exception("Unhandled error in handler! " + ex.Message));
+                }
             }else
             {
                 RaiseError(new Exception("Unknown message type " + printByte(messageType) + " received on input stream!"));

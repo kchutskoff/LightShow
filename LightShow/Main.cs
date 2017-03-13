@@ -17,26 +17,15 @@ namespace LightShow
         private Communication.MessageHandler com;
         private object connectionLock = new object();
 
-        int hueStart = 0;
-        int marqueeStart = 0; // offset of the marquee
-        int marqueeSize = 8; // mods the offset value to get the marquee index
-        int marqueeSkip = 8; // marquee indexes larger than this are turned off
-
         Stopwatch frameTimer = new Stopwatch();
         Queue<long> frameTimings = new Queue<long>();
         const int frameTimingsMax = 5;
         private object fpsLock = new object();
         double framesPerSecond = 0;
         long lastTimestamp = 0;
-        Stack<double> framesDroppedBelow75 = new Stack<double>();
+        Stack<Tuple<double, int>> framesDroppedBelow75 = new Stack<Tuple<double, int>>();
 
-        byte[] nextFrame = null;
-
-        private bool MarqueePixelIsColored(int i)
-        {
-            return ((i + marqueeStart) % marqueeSize) < marqueeSkip;
-        }
-
+        UInt32 currentDataSize = 0;
 
         private enum Commands
         {
@@ -163,73 +152,20 @@ namespace LightShow
             frameTimer.Reset();
         }
 
-        private static Color ColorFromHSV(double hue, double saturation, double value)
-        {
-            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
-            double f = hue / 60 - Math.Floor(hue / 60);
-
-            value = value * 255;
-            int v = Convert.ToInt32(value);
-            int p = Convert.ToInt32(value * (1 - saturation));
-            int q = Convert.ToInt32(value * (1 - f * saturation));
-            int t = Convert.ToInt32(value * (1 - (1 - f) * saturation));
-
-            if (hi == 0)
-                return Color.FromArgb(255, v, t, p);
-            else if (hi == 1)
-                return Color.FromArgb(255, q, v, p);
-            else if (hi == 2)
-                return Color.FromArgb(255, p, v, t);
-            else if (hi == 3)
-                return Color.FromArgb(255, p, q, v);
-            else if (hi == 4)
-                return Color.FromArgb(255, t, p, v);
-            else
-                return Color.FromArgb(255, v, p, q);
-        }
 
         private byte[] BuildNextFrame(int count)
         {
-            byte[] data = new byte[3 * count];
-            marqueeStart--;
-            if (marqueeStart < 0)
-            {
-                marqueeStart = marqueeSize;
-            }
-
-            hueStart++;
-            int deltaHue = 360;
-            if (hueStart > deltaHue)
-            {
-                hueStart = 0;
-            }
-
-            int curHue = hueStart;
-
-            int errorHue = 2 * deltaHue - count;
+            byte[] data = new byte[count];
             for (int i = 0; i < count; ++i)
             {
-                Color ledCol = ColorFromHSV(curHue, 1, 0.6);
-
-                if (MarqueePixelIsColored(i))
+                if (i % 2 == 0)
                 {
-                    data[i * 3] = ledCol.G;
-                    data[i * 3 + 1] = ledCol.R;
-                    data[i * 3 + 2] = ledCol.B;
+                    data[i] = 0xCA;
                 }
                 else
                 {
-                    data[i * 3] = 0;
-                    data[i * 3 + 1] = 0;
-                    data[i * 3 + 2] = 0;
+                    data[i] = 0x35;
                 }
-
-                while (errorHue > 0)
-                {
-                    curHue += 1;
-                    errorHue -= count;
-                }
-                errorHue += deltaHue;
             }
             return data;
         }
@@ -242,48 +178,47 @@ namespace LightShow
                 {
                     if (com != null)
                     {
-                        byte count = EventArgs.data[0];
-                        byte[] data = null;
-                        if (nextFrame == null)
+                        if(EventArgs.data.Length >= 2)
                         {
-                            data = BuildNextFrame(count);
+                            byte high_count = EventArgs.data[0];
+                            byte low_count = EventArgs.data[1];
+                            UInt16 count = (UInt16)((high_count << 8) | low_count);
+                            byte[] data = BuildNextFrame(count);
+                            com.SendMessage((byte)Commands.FRM_RESP, data);
+
+                            long now = frameTimer.ElapsedTicks;
+                            if (frameTimings.Count > 0)
+                            {
+                                long difference = now - frameTimings.Peek();
+                                long ticksPerFrame = difference / frameTimings.Count;
+                                double secondsPerFrame = ((double)ticksPerFrame / Stopwatch.Frequency);
+                                double fps = 1 / secondsPerFrame;
+
+                                difference = now - lastTimestamp;
+                                secondsPerFrame = ((double)difference / Stopwatch.Frequency);
+                                double fpslast = 1 / secondsPerFrame;
+
+                                lock (fpsLock)
+                                {
+                                    currentDataSize = count;
+                                    framesPerSecond = fps;
+                                    if (fpslast < fps * 0.75)
+                                    {
+                                        framesDroppedBelow75.Push(new Tuple<double, int>(fpslast, count));
+                                    }
+                                }
+                            }
+                            lastTimestamp = now;
+                            frameTimings.Enqueue(now);
+                            while (frameTimings.Count > frameTimingsMax)
+                            {
+                                frameTimings.Dequeue();
+                            }
                         }
                         else
                         {
-                            data = nextFrame;
+                            throw new Exception("Expected 2 bytes in packet and only got " + EventArgs.data.Length + "!");
                         }
-                        com.SendMessage((byte)Commands.FRM_RESP, data);
-
-                        long now = frameTimer.ElapsedTicks;
-                        if (frameTimings.Count > 0)
-                        {
-                            long difference = now - frameTimings.Peek();
-                            long ticksPerFrame = difference / frameTimings.Count;
-                            double secondsPerFrame = ((double)ticksPerFrame / Stopwatch.Frequency);
-                            double fps = 1 / secondsPerFrame;
-
-                            difference = now - lastTimestamp;
-                            secondsPerFrame = ((double)difference / Stopwatch.Frequency);
-                            double fpslast = 1 / secondsPerFrame;
-
-                            lock (fpsLock)
-                            {
-                                framesPerSecond = fps;
-                                if(fpslast < fps * 0.75 )
-                                {
-                                    framesDroppedBelow75.Push(fpslast);
-                                }
-                            }
-                        }
-                        lastTimestamp = now;
-                        frameTimings.Enqueue(now);
-                        while (frameTimings.Count > frameTimingsMax)
-                        {
-                            frameTimings.Dequeue();
-                        }
-
-
-                        nextFrame = BuildNextFrame(count);
                     }
                 }
                 finally
@@ -298,10 +233,11 @@ namespace LightShow
         {
             lock (fpsLock)
             {
-                this.labelFPS.Text = this.framesPerSecond.ToString("00.00");
+                this.labelFPS.Text = this.framesPerSecond.ToString("00.00") + " [" + currentDataSize + "]";
                 while(framesDroppedBelow75.Count > 0)
                 {
-                    textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "Frame dropped below 75% of average (" + framesDroppedBelow75.Pop().ToString("00.00") + ")\r\n");
+                    Tuple<double, int> item = framesDroppedBelow75.Pop();
+                    textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "Frame dropped below 75% of average (fps " + item.Item1.ToString("00.00") + ", data count: " + item.Item2.ToString() + ")\r\n");
                 }
             }
             
