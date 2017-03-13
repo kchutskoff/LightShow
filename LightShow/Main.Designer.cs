@@ -109,7 +109,7 @@
             // label2
             // 
             this.label2.AutoSize = true;
-            this.label2.Location = new System.Drawing.Point(112, 43);
+            this.label2.Location = new System.Drawing.Point(91, 43);
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(30, 13);
             this.label2.TabIndex = 7;
@@ -118,7 +118,7 @@
             // labelFPS
             // 
             this.labelFPS.AutoSize = true;
-            this.labelFPS.Location = new System.Drawing.Point(138, 43);
+            this.labelFPS.Location = new System.Drawing.Point(118, 43);
             this.labelFPS.Name = "labelFPS";
             this.labelFPS.Size = new System.Drawing.Size(28, 13);
             this.labelFPS.TabIndex = 8;

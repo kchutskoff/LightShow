@@ -20,12 +20,15 @@ namespace LightShow
         int hueStart = 0;
         int marqueeStart = 0; // offset of the marquee
         int marqueeSize = 8; // mods the offset value to get the marquee index
-        int marqueeSkip = 2; // marquee indexes larger than this are turned off
+        int marqueeSkip = 8; // marquee indexes larger than this are turned off
 
         Stopwatch frameTimer = new Stopwatch();
         Queue<long> frameTimings = new Queue<long>();
-        const int frameTimingsMax = 1;
+        const int frameTimingsMax = 5;
+        private object fpsLock = new object();
         double framesPerSecond = 0;
+        long lastTimestamp = 0;
+        Stack<double> framesDroppedBelow75 = new Stack<double>();
 
         byte[] nextFrame = null;
 
@@ -130,7 +133,7 @@ namespace LightShow
         private bool OpenConnection(string portName)
         {
             CloseConnection();
-            com = new Communication.MessageHandler(portName, 500000, 1024);
+            com = new Communication.MessageHandler(portName, 1000000, 1024);
             com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
             com.OnExceptionMessage += Com_OnExceptionMessage;
 
@@ -143,9 +146,8 @@ namespace LightShow
 
         private void Com_OnExceptionMessage(object sender, Communication.MessageHandler.MessageExceptionEventArgs EventArgs)
         {
-            this.Invoke((Action)delegate
-            {
-                textBoxMessages.AppendText("ERR: " + EventArgs.messageException.Message + "\n");
+            textBoxMessages.InvokeIfRequired(() => {
+                textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + EventArgs.messageException.Message + "\r\n");
             });
         }
 
@@ -250,7 +252,7 @@ namespace LightShow
                         {
                             data = nextFrame;
                         }
-                        com.SendMessage((byte)Commands.FRM_RESP, data);
+                        com.SendMessage((byte)Commands.FRM_RESP, data, true);
 
                         long now = frameTimer.ElapsedTicks;
                         if (frameTimings.Count > 0)
@@ -258,9 +260,22 @@ namespace LightShow
                             long difference = now - frameTimings.Peek();
                             long ticksPerFrame = difference / frameTimings.Count;
                             double secondsPerFrame = ((double)ticksPerFrame / Stopwatch.Frequency);
-                            framesPerSecond = 1 / secondsPerFrame;
-                        }
+                            double fps = 1 / secondsPerFrame;
 
+                            difference = now - lastTimestamp;
+                            secondsPerFrame = ((double)difference / Stopwatch.Frequency);
+                            double fpslast = 1 / secondsPerFrame;
+
+                            lock (fpsLock)
+                            {
+                                framesPerSecond = fps;
+                                if(fpslast < fps * 0.75 )
+                                {
+                                    framesDroppedBelow75.Push(fpslast);
+                                }
+                            }
+                        }
+                        lastTimestamp = now;
                         frameTimings.Enqueue(now);
                         while (frameTimings.Count > frameTimingsMax)
                         {
@@ -281,7 +296,15 @@ namespace LightShow
 
         private void UpdateFramesPerSecond()
         {
-            this.labelFPS.Text = this.framesPerSecond.ToString("00.00");
+            lock (fpsLock)
+            {
+                this.labelFPS.Text = this.framesPerSecond.ToString("00.00");
+                while(framesDroppedBelow75.Count > 0)
+                {
+                    textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "Frame dropped below 75% of average (" + framesDroppedBelow75.Pop().ToString("00.00") + ")\r\n");
+                }
+            }
+            
         }
 
 
