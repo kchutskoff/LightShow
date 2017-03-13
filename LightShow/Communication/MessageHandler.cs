@@ -70,9 +70,16 @@ namespace LightShow.Communication
             
         }
 
-        public bool SendMessage(byte messageType, byte[] data)
+        public bool SendMessage(byte messageType, byte[] data, bool dontEscapeJustReplace = false)
         {
-            data = EscapeStream(data);
+            if (dontEscapeJustReplace)
+            {
+                ReplaceEscapeStream(data);
+            }
+            else
+            {
+                data = EscapeStream(data);
+            }
             byte[] output = new byte[data.Length + 5];
             output[0] = 0x55;
             output[1] = 0xFF;
@@ -176,6 +183,20 @@ namespace LightShow.Communication
         private void RaiseError(Exception e)
         {
             this.OnExceptionMessage?.Invoke(this, new MessageExceptionEventArgs(e));
+        }
+
+        public static void ReplaceEscapeStream(byte[] data)
+        {
+            if (data != null)
+            {
+                for (var i = 0; i < data.Length; ++i)
+                {
+                    if (data[i] == 0x55)
+                    {
+                        data[i] = 0x54;
+                    }
+                }
+            }
         }
 
         public static byte[] EscapeStream(byte[] data)

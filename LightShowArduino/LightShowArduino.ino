@@ -185,21 +185,21 @@ enum Commands : uint8_t {
 
 void requestFrame() {
 	msg.beginSend(Commands::FRM);
-	msg.sendByte((uint8_t)40);
+	msg.sendByte((uint8_t)10);
 	msg.endSend();
 }
 
 void onFrameResponse() {
 	droppedFrameCount = 0;
 	RgbColor rgb;
-	for (int i = 0; i < 40; ++i) {
+	for (int i = 0; i < 10; ++i) {
 		rgb.r = msg.getNextByte();
 		rgb.g = msg.getNextByte();
 		rgb.b = msg.getNextByte();
 		LEDs[i] = rgb;
 	}
 	cli();
-	for (uint8_t i = 0; i < 40; ++i) {
+	for (uint8_t i = 0; i < 10; ++i) {
 		rgb = LEDs[i];
 		SendPixelVariable(rgb.r, rgb.g, rgb.b);
 	}
@@ -289,7 +289,7 @@ void setup() {
 		Set1Timing(GetTimingByte(600, 450));
 	}
 	ledsetup();
-	Serial.begin(1000000);
+	Serial.begin(500000);
 	msg.addHandler(Commands::FRM_RESP, onFrameResponse);
 }
 

@@ -133,7 +133,7 @@ namespace LightShow
         private bool OpenConnection(string portName)
         {
             CloseConnection();
-            com = new Communication.MessageHandler(portName, 1000000, 1024);
+            com = new Communication.MessageHandler(portName, 500000, 1024);
             com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
             com.OnExceptionMessage += Com_OnExceptionMessage;
 
@@ -252,7 +252,7 @@ namespace LightShow
                         {
                             data = nextFrame;
                         }
-                        com.SendMessage((byte)Commands.FRM_RESP, data, true);
+                        com.SendMessage((byte)Commands.FRM_RESP, data);
 
                         long now = frameTimer.ElapsedTicks;
                         if (frameTimings.Count > 0)
