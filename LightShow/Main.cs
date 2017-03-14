@@ -40,8 +40,10 @@ namespace LightShow
 
         private enum Commands
         {
-            FRM = 0,
-            FRM_RESP = 1
+            ACK,
+            ACK_RESP,
+            FRM,
+            FRM_RESP
         }
 
         public Main()
@@ -135,6 +137,7 @@ namespace LightShow
             CloseConnection();
             com = new Communication.MessageHandler(portName, 1000000, 1024);
             com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
+            com.AddMessageHandler((byte)Commands.ACK, OnRequestAck);
             com.OnExceptionMessage += Com_OnExceptionMessage;
 
             frameTimings.Clear();
@@ -234,6 +237,32 @@ namespace LightShow
             return data;
         }
 
+        private void OnRequestAck(object sender, Communication.MessageHandler.MessageEventArgs EventArgs)
+        {
+            if (System.Threading.Monitor.TryEnter(connectionLock))
+            {
+                try
+                {
+                    if (com != null)
+                    {
+                        if (EventArgs.data.Length == 1)
+                        {
+                            com.SendMessage((byte)Commands.ACK_RESP, EventArgs.data, false);
+                            PrintAck(EventArgs.data);
+                        }
+                        else
+                        {
+                            throw new Exception("Expected ACK with one byte and got " + EventArgs.data.Length + " bytes!");
+                        }
+                    }
+                }
+                finally
+                {
+                    System.Threading.Monitor.Exit(connectionLock);
+                }
+            }
+        }
+
         private void OnRequestFrame(object sender, Communication.MessageHandler.MessageEventArgs EventArgs)
         {
             if(System.Threading.Monitor.TryEnter(connectionLock))
@@ -307,6 +336,13 @@ namespace LightShow
             
         }
 
+        private void PrintAck(byte[] data)
+        {
+            this.textBoxMessages.InvokeIfRequired(() =>
+            {
+                textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "ACK " + PrintByteArray(data) + "\r\n");
+            });
+        }
 
         private string PrintByteArray(byte[] data)
         {

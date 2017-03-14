@@ -123,6 +123,7 @@ bool MessageHandlerClass::endSend() {
 	if (isSending) {
 		serial->write((uint8_t)0x81);
 		serial->write((uint8_t)0x00);
+		serial->flush();
 		isSending = false;
 		return true;
 	}

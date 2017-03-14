@@ -178,36 +178,60 @@ uint8_t ownFrameIndex = 0; // offset of own frame (for animation)
 
 MessageHandlerClass msg = MessageHandlerClass(Serial);
 enum Commands : uint8_t {
+	ACK,
+	ACK_RESP,
 	FRM,
 	FRM_RESP
 };
 
+uint8_t currentAckAttempt = 0;
+bool hasAck = false;
+
+#define DATA_PIXELS 40
+
+void requestAck() {
+	hasAck = false;
+	currentAckAttempt++;
+	msg.beginSend(Commands::ACK);
+	msg.sendByte(currentAckAttempt);
+	msg.endSend();
+}
+
+void onAckResponse() {
+	uint8_t response = msg.getNextByte();
+	if (response == currentAckAttempt) {
+		// got ack
+		lastFrameMillis = millis(); // benefit of the doubt
+		hasAck = true;
+		requestFrame();
+	}
+}
 
 void requestFrame() {
 	msg.beginSend(Commands::FRM);
-	msg.sendByte((uint8_t)40);
+	msg.sendByte((uint8_t)DATA_PIXELS);
 	msg.endSend();
 }
 
 void onFrameResponse() {
-	droppedFrameCount = 0;
-	RgbColor rgb;
-	for (int i = 0; i < 40; ++i) {
-		rgb.r = msg.getNextByte();
-		rgb.g = msg.getNextByte();
-		rgb.b = msg.getNextByte();
-		LEDs[i] = rgb;
+	if (hasAck) {
+		droppedFrameCount = 0;
+		RgbColor rgb;
+		for (int i = 0; i < DATA_PIXELS; ++i) {
+			rgb.r = msg.getNextByte();
+			rgb.g = msg.getNextByte();
+			rgb.b = msg.getNextByte();
+			LEDs[i] = rgb;
+		}
+		cli();
+		for (uint8_t i = 0; i < DATA_PIXELS; ++i) {
+			rgb = LEDs[i];
+			SendPixelVariable(rgb.r, rgb.g, rgb.b);
+		}
+		sei();
+		lastFrameMillis = millis();
+		requestFrame();
 	}
-	cli();
-	for (uint8_t i = 0; i < 40; ++i) {
-		rgb = LEDs[i];
-		SendPixelVariable(rgb.r, rgb.g, rgb.b);
-	}
-	sei();
-	lastFrameMillis = millis();
-	requestFrame();
-	
-	
 }
 
 void runOwnFrame() {
@@ -235,7 +259,7 @@ void runOwnFrame() {
 		}		
 		while (errorHue > 0) {
 			curHue++;
-			errorHue -= PIXELS;
+			errorHue -= PIXELS_LESS_SPECIAL;
 		}
 		errorHue += 255;
 	}
@@ -291,6 +315,7 @@ void setup() {
 	ledsetup();
 	Serial.begin(1000000);
 	msg.addHandler(Commands::FRM_RESP, onFrameResponse);
+	msg.addHandler(Commands::ACK_RESP, onAckResponse);
 }
 
 // the loop function runs over and over again until power down or reset
@@ -298,7 +323,7 @@ void loop() {
 	msg.readSerial();
 	if (millis() - lastFrameMillis >= pingDropFrameEvery) {
 		// missed a frame, so ask for a new one
-		requestFrame();
+		requestAck();
 		lastFrameMillis = millis();
 		if (droppedFrameCount < runOwnAfter) {
 			// still counting number of frames left

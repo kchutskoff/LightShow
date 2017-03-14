@@ -36,7 +36,7 @@ namespace LightShow.Communication
         {
             this.readLock = new object();
             this.writeLock = new object();
-            this.port = new SerialPort(portName, baudRate);
+            this.port = new SerialPort(portName, baudRate, Parity.None, 8, StopBits.One);
             this.buffer = new byte[readBufferSize];
             this.OnReadBytes = null;
             this.stopRead = new ManualResetEvent(false);
