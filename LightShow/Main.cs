@@ -24,6 +24,8 @@ namespace LightShow
         double framesPerSecond = 0;
         long lastTimestamp = 0;
         Stack<Tuple<double, int>> framesDroppedBelow75 = new Stack<Tuple<double, int>>();
+        byte lastframeid = 0;
+        Queue<byte> frameIDs = new Queue<byte>();
 
         UInt32 currentDataSize = 0;
 
@@ -155,8 +157,8 @@ namespace LightShow
 
         private byte[] BuildNextFrame(int count)
         {
-            byte[] data = new byte[count];
-            for (int i = 0; i < count; ++i)
+            byte[] data = new byte[count + 1];
+            for (int i = 1; i < count + 1; ++i)
             {
                 if (i % 2 == 0)
                 {
@@ -178,12 +180,14 @@ namespace LightShow
                 {
                     if (com != null)
                     {
-                        if(EventArgs.data.Length >= 2)
+                        if(EventArgs.data.Length >= 3)
                         {
-                            byte high_count = EventArgs.data[0];
-                            byte low_count = EventArgs.data[1];
+                            byte frameid = EventArgs.data[0];
+                            byte high_count = EventArgs.data[1];
+                            byte low_count = EventArgs.data[2];
                             UInt16 count = (UInt16)((high_count << 8) | low_count);
                             byte[] data = BuildNextFrame(count);
+                            data[0] = frameid;
                             com.SendMessage((byte)Commands.FRM_RESP, data);
 
                             long now = frameTimer.ElapsedTicks;
@@ -200,6 +204,7 @@ namespace LightShow
 
                                 lock (fpsLock)
                                 {
+                                    frameIDs.Enqueue(frameid);
                                     currentDataSize = count;
                                     framesPerSecond = fps;
                                     if (fpslast < fps * 0.75)
@@ -239,12 +244,25 @@ namespace LightShow
                     Tuple<double, int> item = framesDroppedBelow75.Pop();
                     textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "Frame dropped below 75% of average (fps " + item.Item1.ToString("00.00") + ", data count: " + item.Item2.ToString() + ")\r\n");
                 }
+                while(frameIDs.Count > 0)
+                {
+                    byte curID = frameIDs.Dequeue();
+                    lastframeid++;
+                    if(curID != lastframeid)
+                    {
+                        textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "Frame ID " + PrintByteArray(lastframeid) + " was dropped!\r\n");
+                        lastframeid = curID;
+                    }else
+                    {
+                        textBoxMessages.AppendText(DateTime.Now.ToString("HH:mm:ss: ") + "Frame ID " + PrintByteArray(lastframeid) + " = SUCCESS!\r\n");
+                    }
+                }
             }
             
         }
 
 
-        private string PrintByteArray(byte[] data)
+        private string PrintByteArray(params byte[] data)
         {
             if(data == null || data.Length == 0)
             {

@@ -45,11 +45,11 @@ bool hasNextByte() {
 	return isReading && Serial.available() > 0;
 }
 
-#define MAX_ATTEMPTS (10)
+#define MAX_ATTEMPTS (1000)
 
 uint8_t getNextByte() {
 	if (isReading) {
-		uint8_t attempts = MAX_ATTEMPTS + 1;
+		uint16_t attempts = MAX_ATTEMPTS + 1;
 		while (--attempts != 0) {
 			if (Serial.available() > 0) {
 				attempts = MAX_ATTEMPTS + 1;
@@ -68,16 +68,15 @@ uint8_t getNextByte() {
 						// ignore
 						continue;
 					}
-				}
-				if (read == 0x55) {
+				}else if (read == 0x55) {
 					// escape character
 					lastWasSpecial = true;
-					continue;
 				}
 				else {
 					return read;
 				}
 			}
+			NOP();
 		}
 		return 0x00;
 	}
@@ -125,30 +124,41 @@ void ledsetup() {
 }
 
 uint64_t lastFrameMillis = 0;
-uint64_t pingDropFrameEvery = 250; // if we don't get a frame after 1000ms, send message for a new one
+uint64_t pingDropFrameEvery = 1000; // if we don't get a frame after 1000ms, send message for a new one
 uint8_t resetCountAfterDrops = 10; // if we don't get a frame after 10 pings, reset the data count
 uint8_t droppedFrameCount = 0; // count the number of dropped frames
-uint16_t currentDataCount = 0; // amount of data to request for
+uint16_t currentDataCount = 10; // amount of data to request for
 uint16_t maxDataCount = 1000; // our message buffer is only 1024
 uint8_t currentDataCountIndex = 0; // number of times we sent the current data count
-uint8_t maxDataCountIndex = 20; // send each amount of data 50 times in a row before moving up
+uint8_t maxDataCountIndex = 5; // send each amount of data 50 times in a row before moving up
+
+uint8_t latestframeID = 0;
 
 void requestFrame() {
 	uint8_t high = (currentDataCount >> 8);
 	uint8_t low = currentDataCount;
 	beginSend(Commands::FRM);
+	sendByte(++latestframeID);
 	sendByte(high);
 	sendByte(low);
 	endSend();
 }
 
 void onFrameResponse() {
+	
+	uint8_t byteToRead = getNextByte();
+	if (byteToRead != latestframeID) {
+		return; // ignore the message
+	}
+
 	droppedFrameCount = 0;
-	uint8_t byteToRead;
 	for (uint16_t i = 0; i < currentDataCount; ++i) {
 		byteToRead = getNextByte();
 	}
-	while (getNextByte() != 0x00);
+	// clear buffer (we should get 0x00 when we run out of data)
+	// with this line in, we never get more than 2 packets in a row before a drop
+	// without this line, we get continuous results as long as we are not at a boundary...
+	//while (getNextByte() != 0x00) {}
 	cli();
 	for (uint16_t i = 0; i < currentDataCount; ++i) {
 		// pretend we did some processing on LEDs
@@ -170,7 +180,7 @@ void onFrameResponse() {
 		currentDataCountIndex = 0;
 		currentDataCount++;
 		if (currentDataCount >= maxDataCount) {
-			currentDataCount = 0; // hit the max, go back to zero
+			currentDataCount = 10; // hit the max, go back to zero
 		}
 	}
 	lastFrameMillis = millis();
@@ -194,7 +204,7 @@ void loop() {
 		droppedFrameCount++;
 		if (droppedFrameCount >= resetCountAfterDrops) {
 			// dropped twoo many frames, restart count at 1 again
-			currentDataCount = 0;
+			currentDataCount = 10;
 			currentDataCountIndex = 0;
 		}
 	}

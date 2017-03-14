@@ -52,6 +52,7 @@
             // 
             // buttonRefreshAvailPorts
             // 
+            this.buttonRefreshAvailPorts.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.buttonRefreshAvailPorts.Location = new System.Drawing.Point(197, 13);
             this.buttonRefreshAvailPorts.Name = "buttonRefreshAvailPorts";
             this.buttonRefreshAvailPorts.Size = new System.Drawing.Size(75, 23);
@@ -62,6 +63,8 @@
             // 
             // comboBoxPort
             // 
+            this.comboBoxPort.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.comboBoxPort.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.comboBoxPort.FormattingEnabled = true;
             this.comboBoxPort.Location = new System.Drawing.Point(44, 13);
@@ -80,6 +83,7 @@
             // 
             // buttonConnect
             // 
+            this.buttonConnect.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.buttonConnect.Location = new System.Drawing.Point(197, 43);
             this.buttonConnect.Name = "buttonConnect";
             this.buttonConnect.Size = new System.Drawing.Size(75, 23);
@@ -99,11 +103,15 @@
             // 
             // textBoxMessages
             // 
+            this.textBoxMessages.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.textBoxMessages.Location = new System.Drawing.Point(13, 72);
+            this.textBoxMessages.MaxLength = 1000000;
             this.textBoxMessages.Multiline = true;
             this.textBoxMessages.Name = "textBoxMessages";
             this.textBoxMessages.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.textBoxMessages.Size = new System.Drawing.Size(259, 177);
+            this.textBoxMessages.Size = new System.Drawing.Size(259, 180);
             this.textBoxMessages.TabIndex = 6;
             // 
             // label2
@@ -137,9 +145,9 @@
             this.Controls.Add(this.label1);
             this.Controls.Add(this.comboBoxPort);
             this.Controls.Add(this.buttonRefreshAvailPorts);
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MaximizeBox = false;
+            this.MinimumSize = new System.Drawing.Size(300, 300);
             this.Name = "Main";
             this.Text = "LightShow Settings";
             this.Resize += new System.EventHandler(this.Main_Resize);
