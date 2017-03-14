@@ -122,7 +122,7 @@ namespace LightShow
         private bool OpenConnection(string portName)
         {
             CloseConnection();
-            com = new Communication.MessageHandler(portName, 500000, 1024);
+            com = new Communication.MessageHandler(portName, 1000000, 1024);
             com.AddMessageHandler((byte)Commands.FRM, OnRequestFrame);
             com.OnExceptionMessage += Com_OnExceptionMessage;
 
