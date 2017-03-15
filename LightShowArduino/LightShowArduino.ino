@@ -10,69 +10,28 @@ enum Commands : uint8_t {
 	FRM_RESP
 };
 
-void readSerial() {
-	int available = 0;
-	while (Serial.available() > 0) {
-		uint8_t read = Serial.read();
-		if (lastWasHeader) {
-			lastWasHeader = false;
-			// this is the type, send off a message arrival
-			if (read == Commands::FRM_RESP) {
-				isReading = true;
-				onFrameResponse();
-			}
-			else {
-				isReading = false;
-			}
-		}
-		else if (lastWasSpecial) {
-			lastWasSpecial = false;
-			if (read == 0xFF) {
-				// start of packet
-				lastWasHeader = true;
-			}
-			else if (read == 0x00) {
-				isReading = false;
-			}
-		}
-		else if (read == 0x55) {
-			lastWasSpecial = true;
+#define MAX_ATTEMPTS (1000UL)
+
+uint8_t readPacket() {
+	if (isReading == false) {
+		return 0xEE;
+	}
+	unsigned long started = millis();
+	while (Serial.available() == 0) {
+		if (millis() - started > 1000UL) {
+			isReading = false;
+			return 0xEE;
 		}
 	}
-}
-
-bool hasNextByte() {
-	return isReading && Serial.available() > 0;
-}
-
-#define MAX_ATTEMPTS (1000)
-
-uint8_t getNextByte() {
 	if (isReading) {
-		uint16_t attempts = MAX_ATTEMPTS + 1;
+		uint16_t attempts = MAX_ATTEMPTS + 1UL;
 		while (--attempts != 0) {
 			if (Serial.available() > 0) {
-				attempts = MAX_ATTEMPTS + 1;
+				attempts = MAX_ATTEMPTS + 1UL;
 				uint8_t read = Serial.read();
-				if (lastWasSpecial) {
-					if (read == 0xFE) {
-						// escaped
-						return 0x55;
-					}
-					else if (read == 0x00) {
-						// end of packet
-						isReading = false;
-						return 0x00;
-					}
-					else {
-						// ignore
-						continue;
-					}
-				}else if (read == 0x55) {
-					// escape character
-					lastWasSpecial = true;
-				}
-				else {
+				if (read == 0xFF) {
+					// done packet
+					isReading = false;
 					return read;
 				}
 			}
@@ -142,51 +101,8 @@ void requestFrame() {
 	sendByte(high);
 	sendByte(low);
 	endSend();
+	isReading = true;
 }
-
-void onFrameResponse() {
-	
-	uint8_t byteToRead = getNextByte();
-	if (byteToRead != latestframeID) {
-		return; // ignore the message
-	}
-
-	droppedFrameCount = 0;
-	for (uint16_t i = 0; i < currentDataCount; ++i) {
-		byteToRead = getNextByte();
-	}
-	// clear buffer (we should get 0x00 when we run out of data)
-	// with this line in, we never get more than 2 packets in a row before a drop
-	// without this line, we get continuous results as long as we are not at a boundary...
-	//while (getNextByte() != 0x00) {}
-	cli();
-	for (uint16_t i = 0; i < currentDataCount; ++i) {
-		// pretend we did some processing on LEDs
-		for (uint8_t j = 0; j < 8; ++j) {
-			NOP();
-			NOP();
-			NOP();
-			NOP();
-			NOP();
-			NOP();
-			NOP();
-		}
-	}
-	sei();
-	// how many times have we sent this data size?
-	currentDataCountIndex++;
-	if (currentDataCountIndex >= maxDataCountIndex) {
-		// enough, go up a data size and reset the counter
-		currentDataCountIndex = 0;
-		currentDataCount++;
-		if (currentDataCount >= maxDataCount) {
-			currentDataCount = 10; // hit the max, go back to zero
-		}
-	}
-	lastFrameMillis = millis();
-	requestFrame();
-}
-
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -196,16 +112,28 @@ void setup() {
 
 // the loop function runs over and over again until power down or reset
 void loop() {
-	readSerial();
-	if (millis() - lastFrameMillis >= pingDropFrameEvery) {
-		// missed a frame, so ask for a new one
-		requestFrame();
-		lastFrameMillis = millis();
-		droppedFrameCount++;
-		if (droppedFrameCount >= resetCountAfterDrops) {
-			// dropped twoo many frames, restart count at 1 again
-			currentDataCount = 10;
+	uint8_t read = readPacket();
+	if (read == 0xEE) {
+		// fucked up, restart
+		currentDataCount = 10;
+		currentDataCountIndex = 0;
+	}
+	else if (read == 0x00) {
+		// ran out of data, go down one
+		if (currentDataCount > 10) {
+			currentDataCount--;
+		}
+		currentDataCountIndex = 0;
+	}
+	else if (read == 0xFF) {
+		// good, go up one
+		currentDataCountIndex++;
+		if (currentDataCountIndex > maxDataCountIndex) {
 			currentDataCountIndex = 0;
+			if (currentDataCount < maxDataCount) {
+				currentDataCount++;
+			}
 		}
 	}
+	requestFrame();
 }

@@ -82,10 +82,10 @@ namespace LightShow.Communication
             }
             byte[] output = new byte[data.Length + 5];
             output[0] = 0x55;
-            output[1] = 0xFF;
+            output[1] = 0x55;
             output[2] = messageType;
             output[3 + data.Length] = 0x55;
-            output[4 + data.Length] = 0x00;
+            output[4 + data.Length] = 0xFF;
             Buffer.BlockCopy(data, 0, output, 3, data.Length);
             return this.serial.WriteBytes(output, 0, output.Length);
         }
