@@ -11,5 +11,6 @@ This creates the ability to make unique effects such as:
 - Quick color changing
 - Spectrum cycling
 
-
-This project is still a Work in Progress
+<dl>
+  <dd><i>This project is a work-in-progress</i></dd>
+</dl>
